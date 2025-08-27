@@ -1,6 +1,7 @@
 import clarimedLogo from "@/assets/clarimed-logo.png";
 import { Button } from "@/components/ui/button";
 import { Shield, CheckCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export const Header = () => {
   return (
@@ -30,8 +31,8 @@ export const Header = () => {
               </div>
             </div>
             
-            <Button variant="outline" size="sm">
-              Login
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/login">Login</Link>
             </Button>
           </div>
         </div>

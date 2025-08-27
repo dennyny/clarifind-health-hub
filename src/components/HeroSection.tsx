@@ -1,5 +1,7 @@
 import { UploadZone } from "./UploadZone";
-import { Clock, Shield, Users, Star } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Clock, Shield, Users, Star, Stethoscope } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export const HeroSection = () => {
   return (
@@ -45,6 +47,16 @@ export const HeroSection = () => {
 
           {/* Upload Section */}
           <UploadZone />
+
+          {/* Demo Link */}
+          <div className="text-center pt-4">
+            <Button variant="outline" asChild>
+              <Link to="/doctor" className="flex items-center gap-2">
+                <Stethoscope className="w-4 h-4" />
+                Preview Doctor Dashboard
+              </Link>
+            </Button>
+          </div>
 
           {/* Features Grid */}
           <div className="grid md:grid-cols-3 gap-6 pt-8">
