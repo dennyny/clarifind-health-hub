@@ -48,14 +48,27 @@ export const HeroSection = () => {
           {/* Upload Section */}
           <UploadZone />
 
-          {/* Demo Link */}
-          <div className="text-center pt-4">
-            <Button variant="outline" asChild>
-              <Link to="/doctor" className="flex items-center gap-2">
-                <Stethoscope className="w-4 h-4" />
-                Preview Doctor Dashboard
+          {/* Action Buttons */}
+          <div className="text-center pt-4 space-y-4">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+              <Button variant="medical" size="lg" asChild>
+                <Link to="/signup">
+                  Get Premium Features
+                </Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link to="/expert" className="flex items-center gap-2">
+                  <Stethoscope className="w-4 h-4" />
+                  Doctor Login
+                </Link>
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Want consultations, prescriptions, and priority support?{" "}
+              <Link to="/signup" className="text-primary hover:underline font-medium">
+                Join thousands of satisfied patients
               </Link>
-            </Button>
+            </p>
           </div>
 
           {/* Features Grid */}

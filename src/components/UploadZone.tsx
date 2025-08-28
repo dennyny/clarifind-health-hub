@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Upload, FileCheck, AlertCircle, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { LabResultsService } from "@/lib/labResultsService";
 
 export const UploadZone = () => {
   const [dragActive, setDragActive] = useState(false);
@@ -92,20 +93,29 @@ export const UploadZone = () => {
 
     setIsUploading(true);
     
-    // Simulate upload process
-    setTimeout(() => {
+    try {
+      // Save the lab result using the service
+      const savedResult = await LabResultsService.saveLabResult(uploadedFile, email);
+      
       setIsUploading(false);
-      const referenceNumber = `CLR-${Date.now().toString().slice(-6)}`;
       
       toast({
         title: "Upload successful!",
-        description: `Your reference number is ${referenceNumber}. You'll receive results within 24 hours.`,
+        description: `Your reference number is ${savedResult.id}. You'll receive results within 24 hours.`,
       });
       
       // Reset form
       setUploadedFile(null);
       setEmail("");
-    }, 2000);
+    } catch (error) {
+      setIsUploading(false);
+      toast({
+        title: "Upload failed",
+        description: "There was an error uploading your file. Please try again.",
+        variant: "destructive",
+      });
+      console.error('Upload error:', error);
+    }
   };
 
   return (

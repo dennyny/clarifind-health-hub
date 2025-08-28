@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,44 +13,30 @@ import {
   Send, 
   User,
   Calendar,
-  Filter
+  Filter,
+  AlertCircle,
+  UserCheck,
+  Zap,
+  RefreshCw
 } from "lucide-react";
+import { LabResultViewer } from "./LabResultViewer";
+import { FullPageLabViewer } from "./FullPageLabViewer";
+import { LabResultsService, LabResult, Doctor } from "@/lib/labResultsService";
+import { useToast } from "@/hooks/use-toast";
 
-// Mock data for demonstration
-const mockUploadedResults = [
-  {
-    id: "CLR-123456",
-    patientEmail: "john.doe@email.com",
-    fileName: "CBC_Results_Jan2024.pdf",
-    uploadDate: "2024-01-15T10:30:00Z",
-    status: "pending",
-    fileSize: "1.2 MB",
-    testType: "Complete Blood Count"
-  },
-  {
-    id: "CLR-123457",
-    patientEmail: "sarah.smith@email.com",
-    fileName: "Lipid_Panel_Results.pdf",
-    uploadDate: "2024-01-14T14:45:00Z",
-    status: "in-review",
-    fileSize: "0.8 MB",
-    testType: "Lipid Panel"
-  },
-  {
-    id: "CLR-123458",
-    patientEmail: "mike.jones@email.com",
-    fileName: "Thyroid_Function_Test.pdf",
-    uploadDate: "2024-01-13T09:15:00Z",
-    status: "completed",
-    fileSize: "1.0 MB",
-    testType: "Thyroid Function"
-  }
-];
+
+type FilterType = 'all' | 'fresh' | 'in-review' | 'completed' | 'my-assignments';
 
 export const DoctorDashboard = () => {
   const [selectedResult, setSelectedResult] = useState<string | null>(null);
   const [interpretation, setInterpretation] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [labResults, setLabResults] = useState<LabResult[]>([]);
+  const [currentFilter, setCurrentFilter] = useState<FilterType>('all');
+  const [currentDoctor] = useState<Doctor>(LabResultsService.getAvailableDoctors()[0]); // Simulate logged-in doctor
+  const [availableDoctors] = useState<Doctor[]>(LabResultsService.getAvailableDoctors());
+  const [fullPageViewerId, setFullPageViewerId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -70,11 +56,147 @@ export const DoctorDashboard = () => {
     }
   };
 
-  const filteredResults = mockUploadedResults.filter(result =>
-    result.patientEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    result.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    result.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Load lab results on component mount and refresh periodically
+  useEffect(() => {
+    const loadResults = () => {
+      // Initialize demo data if no results exist
+      LabResultsService.initializeDemoData();
+      const results = LabResultsService.getAllLabResults();
+      setLabResults(results);
+    };
+
+    loadResults();
+    
+    // Refresh data every 30 seconds to catch new uploads
+    const interval = setInterval(loadResults, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Apply filters based on current filter type
+  const getFilteredResults = () => {
+    let filtered = labResults;
+    
+    // Apply filter type
+    switch (currentFilter) {
+      case 'fresh':
+        filtered = LabResultsService.getFreshResults();
+        break;
+      case 'in-review':
+        filtered = LabResultsService.getResultsByStatus('in-review');
+        break;
+      case 'completed':
+        filtered = LabResultsService.getResultsByStatus('completed');
+        break;
+      case 'my-assignments':
+        filtered = LabResultsService.getResultsByDoctor(currentDoctor.id);
+        break;
+      default:
+        filtered = labResults;
+    }
+
+    // Apply search term
+    if (searchTerm) {
+      filtered = filtered.filter(result =>
+        result.patientEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        result.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        result.id.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    return filtered;
+  };
+
+  const filteredResults = getFilteredResults();
+
+  const handleAssignToMe = (resultId: string) => {
+    const updated = LabResultsService.assignDoctorToResult(resultId, currentDoctor);
+    if (updated) {
+      setLabResults(LabResultsService.getAllLabResults());
+      toast({
+        title: "Assignment successful",
+        description: "Lab result has been assigned to you",
+      });
+    }
+  };
+
+  const handleUnassign = (resultId: string) => {
+    const updated = LabResultsService.unassignDoctorFromResult(resultId);
+    if (updated) {
+      setLabResults(LabResultsService.getAllLabResults());
+      toast({
+        title: "Unassigned",
+        description: "Lab result has been unassigned",
+      });
+    }
+  };
+
+  const getPriorityColor = (priority?: string) => {
+    switch (priority) {
+      case 'urgent': return 'bg-red-100 text-red-800 border-red-200';
+      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'normal': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'low': return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-blue-100 text-blue-800 border-blue-200';
+    }
+  };
+
+  const getFilterCounts = () => {
+    return {
+      fresh: LabResultsService.getFreshResults().length,
+      inReview: LabResultsService.getResultsByStatus('in-review').length,
+      completed: LabResultsService.getResultsByStatus('completed').length,
+      myAssignments: LabResultsService.getResultsByDoctor(currentDoctor.id).length
+    };
+  };
+
+  const filterCounts = getFilterCounts();
+
+  const handleStatusUpdate = (resultId: string, newStatus: LabResult['status']) => {
+    const updated = LabResultsService.updateLabResult(resultId, { status: newStatus });
+    if (updated) {
+      setLabResults(LabResultsService.getAllLabResults());
+      toast({
+        title: "Status updated",
+        description: `Lab result status changed to ${newStatus}`,
+      });
+    }
+  };
+
+  const handleSendInterpretation = () => {
+    if (!selectedResult || !interpretation.trim()) {
+      toast({
+        title: "Missing information",
+        description: "Please select a result and write an interpretation",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const updated = LabResultsService.updateLabResult(selectedResult, { 
+      interpretation: interpretation.trim(),
+      status: 'completed'
+    });
+    
+    if (updated) {
+      setLabResults(LabResultsService.getAllLabResults());
+      setInterpretation("");
+      toast({
+        title: "Interpretation sent!",
+        description: "The patient will receive your interpretation via email.",
+      });
+    }
+  };
+
+  const getStatsData = () => {
+    const pending = labResults.filter(r => r.status === 'pending').length;
+    const inReview = labResults.filter(r => r.status === 'in-review').length;
+    const completed = labResults.filter(r => r.status === 'completed').length;
+    
+    return { pending, inReview, completed };
+  };
+
+  const stats = getStatsData();
 
   return (
     <div className="min-h-screen bg-background">
@@ -112,6 +234,7 @@ export const DoctorDashboard = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Search Bar */}
                 <div className="flex gap-4">
                   <div className="flex-1">
                     <Input
@@ -121,74 +244,261 @@ export const DoctorDashboard = () => {
                       className="bg-background"
                     />
                   </div>
-                  <Button variant="outline" size="icon">
-                    <Filter className="w-4 h-4" />
+                </div>
+                
+                {/* Filter Buttons */}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={currentFilter === 'all' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCurrentFilter('all')}
+                    className="h-8"
+                  >
+                    All Results ({labResults.length})
+                  </Button>
+                  <Button
+                    variant={currentFilter === 'fresh' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCurrentFilter('fresh')}
+                    className="h-8 relative"
+                  >
+                    <Zap className="w-3 h-3 mr-1" />
+                    Fresh ({filterCounts.fresh})
+                    {filterCounts.fresh > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                    )}
+                  </Button>
+                  <Button
+                    variant={currentFilter === 'in-review' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCurrentFilter('in-review')}
+                    className="h-8"
+                  >
+                    <Eye className="w-3 h-3 mr-1" />
+                    In Review ({filterCounts.inReview})
+                  </Button>
+                  <Button
+                    variant={currentFilter === 'completed' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCurrentFilter('completed')}
+                    className="h-8"
+                  >
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Completed ({filterCounts.completed})
+                  </Button>
+                  <Button
+                    variant={currentFilter === 'my-assignments' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setCurrentFilter('my-assignments')}
+                    className="h-8"
+                  >
+                    <UserCheck className="w-3 h-3 mr-1" />
+                    My Assignments ({filterCounts.myAssignments})
                   </Button>
                 </div>
+                
+                {/* Active Filter Info */}
+                {currentFilter !== 'all' && (
+                  <div className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Filter className="w-3 h-3" />
+                    Showing {currentFilter.replace('-', ' ')} results ({filteredResults.length})
+                  </div>
+                )}
               </CardContent>
             </Card>
 
             {/* Results List */}
             <div className="space-y-4">
-              {filteredResults.map((result) => (
-                <Card 
-                  key={result.id} 
-                  className={`shadow-card cursor-pointer transition-all duration-300 hover:shadow-medical ${
-                    selectedResult === result.id ? "ring-2 ring-primary" : ""
-                  }`}
-                  onClick={() => setSelectedResult(result.id)}
-                >
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-3">
-                          <Badge className={getStatusColor(result.status)}>
-                            {getStatusIcon(result.status)}
-                            <span className="ml-1 capitalize">{result.status}</span>
-                          </Badge>
-                          <span className="text-sm font-mono text-muted-foreground">
-                            {result.id}
-                          </span>
-                        </div>
-                        
-                        <h3 className="font-semibold text-foreground">
-                          {result.testType}
-                        </h3>
-                        
-                        <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            <User className="w-4 h-4" />
-                            {result.patientEmail}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
-                            {new Date(result.uploadDate).toLocaleDateString()}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4" />
-                            {result.fileName}
-                          </div>
-                          <div className="text-muted-foreground">
-                            {result.fileSize}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
-                          <Eye className="w-4 h-4 mr-2" />
-                          View File
-                        </Button>
-                        {result.status === "pending" && (
-                          <Button variant="medical" size="sm">
-                            Start Review
-                          </Button>
-                        )}
-                      </div>
-                    </div>
+              {filteredResults.length === 0 ? (
+                <Card className="shadow-card">
+                  <CardContent className="p-8 text-center">
+                    <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="font-semibold text-foreground mb-2">
+                      No Results Found
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {searchTerm ? 'No results match your search criteria.' : 'No lab results found for the selected filter.'}
+                    </p>
+                    {(currentFilter !== 'all' || searchTerm) && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-4"
+                        onClick={() => {
+                          setCurrentFilter('all');
+                          setSearchTerm('');
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
-              ))}
+              ) : (
+                filteredResults.map((result) => {
+                  const isFresh = LabResultsService.getFreshResults().some(f => f.id === result.id);
+                  const isAssignedToMe = result.assignedDoctor?.id === currentDoctor.id;
+                  
+                  return (
+                    <Card 
+                      key={result.id} 
+                      className={`shadow-card cursor-pointer transition-all duration-300 hover:shadow-medical ${
+                        selectedResult === result.id ? "ring-2 ring-primary" : ""
+                      } ${isFresh ? "border-l-4 border-l-orange-400" : ""}`}
+                      onClick={() => setSelectedResult(result.id)}
+                    >
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-3 flex-1">
+                            {/* Status and ID Row */}
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <Badge className={getStatusColor(result.status)}>
+                                {getStatusIcon(result.status)}
+                                <span className="ml-1 capitalize">{result.status.replace('-', ' ')}</span>
+                              </Badge>
+                              
+                              {result.priority && result.priority !== 'normal' && (
+                                <Badge className={getPriorityColor(result.priority)}>
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  {result.priority.toUpperCase()}
+                                </Badge>
+                              )}
+                              
+                              {isFresh && (
+                                <Badge className="bg-orange-100 text-orange-800 border-orange-200">
+                                  <Zap className="w-3 h-3 mr-1" />
+                                  Fresh
+                                </Badge>
+                              )}
+                              
+                              <span className="text-sm font-mono text-muted-foreground">
+                                {result.id}
+                              </span>
+                            </div>
+                            
+                            {/* Test Type */}
+                            <h3 className="font-semibold text-foreground">
+                              {result.testType}
+                            </h3>
+                            
+                            {/* Patient and File Info */}
+                            <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground">
+                              <div className="flex items-center gap-2">
+                                <User className="w-4 h-4" />
+                                {result.patientEmail}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4" />
+                                {new Date(result.uploadDate).toLocaleDateString()}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4" />
+                                {result.fileName}
+                              </div>
+                              <div className="text-muted-foreground">
+                                {result.fileSize}
+                              </div>
+                            </div>
+                            
+                            {/* Assignment Info */}
+                            {result.assignedDoctor && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <UserCheck className="w-4 h-4 text-blue-600" />
+                                <span className={isAssignedToMe ? "text-blue-600 font-medium" : "text-muted-foreground"}>
+                                  {isAssignedToMe ? "Assigned to you" : `Assigned to ${result.assignedDoctor.name}`}
+                                </span>
+                                {result.assignedAt && (
+                                  <span className="text-muted-foreground">• {new Date(result.assignedAt).toLocaleDateString()}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Action Buttons */}
+                          <div className="flex flex-col gap-2">
+                            <div className="flex gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFullPageViewerId(result.id);
+                                }}
+                              >
+                                <Eye className="w-4 h-4 mr-2" />
+                                View
+                              </Button>
+                            </div>
+                            
+                            {/* Assignment Actions */}
+                            <div className="flex gap-2">
+                              {result.status === "pending" && !result.assignedDoctor && (
+                                <Button 
+                                  variant="medical" 
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAssignToMe(result.id);
+                                    setSelectedResult(result.id);
+                                  }}
+                                >
+                                  <UserCheck className="w-4 h-4 mr-2" />
+                                  Take
+                                </Button>
+                              )}
+                              
+                              {result.status === "pending" && result.assignedDoctor && !isAssignedToMe && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toast({
+                                      title: "Already assigned",
+                                      description: `This result is assigned to ${result.assignedDoctor.name}`,
+                                      variant: "destructive",
+                                    });
+                                  }}
+                                  disabled
+                                >
+                                  Assigned
+                                </Button>
+                              )}
+                              
+                              {isAssignedToMe && result.status === "in-review" && (
+                                <Button 
+                                  variant="medical" 
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedResult(result.id);
+                                  }}
+                                >
+                                  Continue
+                                </Button>
+                              )}
+                              
+                              {isAssignedToMe && result.status === "pending" && (
+                                <Button 
+                                  variant="medical" 
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStatusUpdate(result.id, 'in-review');
+                                    setSelectedResult(result.id);
+                                  }}
+                                >
+                                  Start Review
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -207,18 +517,7 @@ export const DoctorDashboard = () => {
                     Selected: {selectedResult}
                   </div>
                   
-                  {/* File Viewer Placeholder */}
-                  <div className="aspect-[3/4] bg-muted rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center">
-                    <div className="text-center space-y-2">
-                      <FileText className="w-12 h-12 text-muted-foreground mx-auto" />
-                      <p className="text-sm text-muted-foreground">
-                        Lab Results PDF Viewer
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        (File would display here)
-                      </p>
-                    </div>
-                  </div>
+                  <LabResultViewer resultId={selectedResult} />
                   
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">
@@ -233,11 +532,30 @@ export const DoctorDashboard = () => {
                   </div>
                   
                   <div className="flex gap-2">
-                    <Button variant="medical" className="flex-1">
+                    <Button 
+                      variant="medical" 
+                      className="flex-1"
+                      onClick={handleSendInterpretation}
+                      disabled={!interpretation.trim()}
+                    >
                       <Send className="w-4 h-4 mr-2" />
                       Send to Patient
                     </Button>
-                    <Button variant="outline">
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        if (selectedResult) {
+                          LabResultsService.updateLabResult(selectedResult, { 
+                            interpretation: interpretation.trim() 
+                          });
+                          toast({
+                            title: "Draft saved",
+                            description: "Your interpretation has been saved as a draft",
+                          });
+                        }
+                      }}
+                      disabled={!interpretation.trim()}
+                    >
                       Save Draft
                     </Button>
                   </div>
@@ -263,19 +581,23 @@ export const DoctorDashboard = () => {
                 <CardTitle>Today's Stats</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-primary">8</div>
+                    <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
                     <div className="text-xs text-muted-foreground">Pending</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-accent">5</div>
+                    <div className="text-2xl font-bold text-blue-600">{stats.inReview}</div>
+                    <div className="text-xs text-muted-foreground">In Review</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
                     <div className="text-xs text-muted-foreground">Completed</div>
                   </div>
                 </div>
                 <div className="text-center pt-2 border-t border-border">
                   <div className="text-sm text-muted-foreground">
-                    Avg. turnaround: <span className="font-medium">18 hours</span>
+                    Total results: <span className="font-medium">{labResults.length}</span>
                   </div>
                 </div>
               </CardContent>
@@ -283,6 +605,19 @@ export const DoctorDashboard = () => {
           </div>
         </div>
       </div>
+      
+      {/* Full Page Lab Viewer */}
+      {fullPageViewerId && (
+        <FullPageLabViewer
+          resultId={fullPageViewerId}
+          onClose={() => setFullPageViewerId(null)}
+          onSendInterpretation={(interpretation) => {
+            setLabResults(LabResultsService.getAllLabResults());
+            // Optionally close the full page viewer after sending
+            // setFullPageViewerId(null);
+          }}
+        />
+      )}
     </div>
   );
 };
